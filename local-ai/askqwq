@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+MODEL="qwq:32b"
+
+# 1. 파이프(|) 입력이 들어온 경우 (표준 입력 감지)
+if [ ! -t 0 ]; then
+    STDIN_DATA=$(cat)
+    USER_QUERY="$*"
+    if [ -z "$USER_QUERY" ]; then
+        USER_QUERY="제공된 내용을 깊이 있게 분석하고 단계별 추론을 거쳐 한국어로 명확히 설명해줘."
+    fi
+    
+    PROMPT="[전달된 데이터/로그/코드]\n$STDIN_DATA\n\n[요청 사항]\n$USER_QUERY"
+    echo -e "$PROMPT" | ollama run "$MODEL"
+else
+    # 2. 단일 질문 또는 대화형 모드
+    if [ -n "$*" ]; then
+        ollama run "$MODEL" "$*"
+    else
+        ollama run "$MODEL"
+    fi
+fi

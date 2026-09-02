@@ -1,0 +1,355 @@
+#!/usr/bin/env -S python3 -W ignore
+import sys
+import os
+import subprocess
+import json
+import urllib.request
+import urllib.parse
+import re
+import warnings
+
+# 경고 무음 처리
+warnings.simplefilter("ignore")
+warnings.filterwarnings("ignore")
+os.environ["PYTHONWARNINGS"] = "ignore"
+
+def dummy_showwarning(*args, **kwargs):
+    pass
+warnings.showwarning = dummy_showwarning
+
+import ollama
+
+# ==============================================================================
+# 도구(Tools) 정의
+# ==============================================================================
+
+def tool_bash(command: str) -> str:
+    """리눅스 셸 명령어를 실행하고 결과를 반환합니다."""
+    # 위험 명령어 사전 차단
+    dangerous = ["rm -rf /", "mkfs", "dd if=", ":(){ :|:& };:"]
+    for d in dangerous:
+        if d in command:
+            return f"❌ [보안 거부] 시스템 위험 명령어가 감지되어 실행이 차단되었습니다: {command}"
+    
+    try:
+        res = subprocess.run(
+            command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15
+        )
+        out = res.stdout.strip()
+        err = res.stderr.strip()
+        result = out if out else ""
+        if err:
+            result += f"\n[stderr]: {err}"
+
+        if not result:
+            return "(출력 없음, 정상 실행됨)"
+
+        # 대용량 출력 축약 (컨텍스트 윈도우 보호 및 user 쿼리 유실 방지)
+        max_len = 3500
+        if len(result) > max_len:
+            head_len = 1000
+            tail_len = 2500
+            result = f"{result[:head_len]}\n\n... [중략: 총 {len(result)}자 중 {len(result) - head_len - tail_len}자 생략됨] ...\n\n{result[-tail_len:]}"
+
+        return result
+    except subprocess.TimeoutExpired:
+        return "❌ [오류] 명령어 실행 시간 초과 (15초)"
+    except Exception as e:
+        return f"❌ [실행 실패]: {e}"
+
+def tool_web_search(query: str) -> str:
+    """Google 웹 검색을 통해 최신 실시간 정보를 수집합니다."""
+    results = []
+    # 1. Google HTTP 파서
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+        url = f"https://www.google.com/search?q={urllib.parse.quote(query)}&hl=ko&gl=kr&num=4"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+            titles = re.findall(r'<h3[^>]*>(.*?)</h3>', html)
+            snippets = re.findall(r'<div[^>]+class="[^"]*(?:VwiC3b|yXK7lf|MUxGbd)[^"]*"[^>]*>(.*?)</div>', html)
+            for i in range(min(len(titles), 4)):
+                clean_title = re.sub(r'<.*?>', '', titles[i]).strip()
+                clean_body = re.sub(r'<.*?>', '', snippets[i]).strip() if i < len(snippets) else ""
+                if clean_title:
+                    results.append(f"[{i+1}] {clean_title} - {clean_body}")
+    except Exception:
+        pass
+
+    # 2. DuckDuckGo Fallback
+    if not results:
+        try:
+            try:
+                from ddgs import DDGS
+            except Exception:
+                from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                raw = list(ddgs.text(query, region="kr-kr", max_results=4))
+                for i, r in enumerate(raw):
+                    results.append(f"[{i+1}] {r.get('title', '')} - {r.get('body', '')}")
+        except Exception:
+            pass
+
+    return "\n".join(results) if results else "검색 결과 없음"
+
+# ==============================================================================
+# Ollama 공식 Tool Definitions
+# ==============================================================================
+
+TOOLS = [
+    {
+        'type': 'function',
+        'function': {
+            'name': 'run_terminal_command',
+            'description': '리눅스 터미널 셸 명령어(하드웨어 상태, 센서, 프로세스, 파일 확인, 설정 변경 등)를 직접 실행합니다.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'command': {
+                        'type': 'string',
+                        'description': '실행할 리눅스 bash 명령어 (예: nvidia-smi, sensors, uname -a, cat /path/to/file)'
+                    }
+                },
+                'required': ['command']
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'search_the_web',
+            'description': '실시간 인터넷 웹(Google)을 검색하여 최신 뉴스, 날씨, 주가, 게임 패치노트 등을 수집합니다.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'query': {
+                        'type': 'string',
+                        'description': '검색할 키워드 또는 질의어'
+                    }
+                },
+                'required': ['query']
+            }
+        }
+    }
+]
+
+def get_system_hardware_info() -> str:
+    """호스트 PC의 OS, CPU, GPU, VRAM 정보를 0.01초 만에 실시간 감지합니다."""
+    info_lines = []
+    
+    # 1. OS 및 세션 정보
+    try:
+        os_name = "Linux"
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if line.startswith("PRETTY_NAME="):
+                        os_name = line.split("=", 1)[1].strip().strip('"')
+                        break
+        kernel = subprocess.check_output("uname -r", shell=True, text=True).strip()
+        desktop = os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("DESKTOP_SESSION") or "Wayland/X11"
+        info_lines.append(f"- OS: {os_name} (Kernel {kernel}) | Session: {desktop}")
+    except Exception:
+        info_lines.append("- OS: Linux")
+
+    # 2. CPU
+    try:
+        cpu = subprocess.check_output("lscpu 2>/dev/null | grep 'Model name:' | sed 's/Model name:[ \t]*//'", shell=True, text=True).strip()
+        if not cpu:
+            cpu = subprocess.check_output("grep -m1 'model name' /proc/cpuinfo | cut -d: -f2", shell=True, text=True).strip()
+        if cpu:
+            info_lines.append(f"- CPU: {cpu}")
+    except Exception:
+        pass
+
+    # 3. GPU & VRAM
+    try:
+        gpu_info = ""
+        nv_out = subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null", shell=True, stdout=subprocess.PIPE, text=True)
+        if nv_out.returncode == 0 and nv_out.stdout.strip():
+            g_list = []
+            for g in nv_out.stdout.strip().split("\n"):
+                parts = [p.strip() for p in g.split(",")]
+                if len(parts) >= 2:
+                    vram_gb = round(float(parts[1]) / 1024, 1)
+                    g_list.append(f"NVIDIA {parts[0]} ({vram_gb}GB VRAM)")
+            gpu_info = ", ".join(g_list)
+        
+        if not gpu_info:
+            lspci_out = subprocess.check_output("lspci 2>/dev/null | grep -iE 'vga|3d|display' | cut -d: -f3", shell=True, text=True).strip()
+            if lspci_out:
+                gpu_info = lspci_out.replace("\n", ", ")
+        
+        if gpu_info:
+            info_lines.append(f"- GPU: {gpu_info.strip()}")
+        else:
+            info_lines.append("- GPU: Integrated / CPU Only")
+    except Exception:
+        pass
+
+    return "\n".join(info_lines)
+
+def get_optimal_context_size() -> int:
+    """GPU VRAM 용량에 맞춰 최적의 num_ctx(컨텍스트 윈도우)를 자동 산출합니다."""
+    try:
+        nv_out = subprocess.run("nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null", shell=True, stdout=subprocess.PIPE, text=True)
+        if nv_out.returncode == 0 and nv_out.stdout.strip():
+            vram_mb = float(nv_out.stdout.strip().split("\n")[0])
+            if vram_mb >= 14000:  # 16GB+ VRAM
+                return 16384
+            elif vram_mb >= 7500: # 8GB~12GB VRAM
+                return 8192
+    except Exception:
+        pass
+    return 4096  # 저사양 또는 CPU 환경 기본값
+
+def build_system_prompt() -> str:
+    hw_info = get_system_hardware_info()
+    return f"""당신은 사용자의 호스트 시스템을 완전히 제어할 수 있는 자율형 AI 수석 엔지니어 에이전트(Autonomous Agent)입니다.
+
+[실시간 감지된 호스트 시스템 환경]
+{hw_info}
+
+[자율 에이전트 행동 수칙]
+1. 사용자가 하드웨어 상태(온도, VRAM, RAM, 디스크, 팬 속도 등)나 시스템 설정을 물어보면 절대 추측해서 답하지 말고, 반드시 'run_terminal_command' 도구를 호출하여 실제 측정값을 확인한 후 답변하세요.
+2. 사용자가 최신 뉴스, 시세, 게임 패치노트, 실시간 정보 등을 물어보면 'search_the_web' 도구를 호출하여 최신 웹 정보를 수집한 후 답변하세요.
+3. 필요한 경우 여러 도구를 연속으로 호출하여 문제를 해결할 수 있습니다.
+4. 모든 최종 답변은 유려하고 명쾌한 한국어로 작성하며 핵심 근거를 제시하세요."""
+
+def run_agent_turn(client, model, messages):
+    """자율형 ReAct 루프 실행 (도구 호출 -> 실행 -> 최종 답변)"""
+    max_loops = 6
+    loop_count = 0
+    ctx_size = get_optimal_context_size()
+
+    while loop_count < max_loops:
+        loop_count += 1
+        
+        try:
+            response = client.chat(
+                model=model,
+                messages=messages,
+                tools=TOOLS,
+                options={
+                    'temperature': 0.3,
+                    'num_ctx': ctx_size  # 하드웨어 사양에 맞춰 동적으로 계산된 컨텍스트 크기 적용
+                },
+                keep_alive=0
+            )
+        except Exception as e:
+            return f"❌ [Ollama 응답 처리 오류]: {e}\n(도구 실행 결과량이 너무 많거나 모델 템플릿에서 오류가 발생했습니다.)"
+
+        message = response['message']
+        messages.append(message)
+
+        # 도구 호출(Tool Calls)이 없는 경우 -> 최종 답변 완료
+        if not message.get('tool_calls'):
+            return message.get('content', '')
+
+        # 도구 호출이 있는 경우 -> 실행 후 결과 피드백
+        for tool_call in message['tool_calls']:
+            fn_name = tool_call['function']['name']
+            fn_args = tool_call['function']['arguments']
+
+            print(f"\033[0;35m⚡ [자율 에이전트 도구 실행]\033[0m: {fn_name}")
+            
+            tool_output = ""
+            if fn_name == 'run_terminal_command':
+                cmd = fn_args.get('command', '')
+                print(f"  \033[0;34m$ {cmd}\033[0m")
+                tool_output = tool_bash(cmd)
+                # 실행 결과 미리보기 (일부 축약)
+                preview = tool_output[:200] + "..." if len(tool_output) > 200 else tool_output
+                print(f"  \033[0;32m↳ 결과 수집 완료 ({len(tool_output)}자)\033[0m")
+            
+            elif fn_name == 'search_the_web':
+                query = fn_args.get('query', '')
+                print(f"  \033[0;34m🔍 구글 검색: {query}\033[0m")
+                tool_output = tool_web_search(query)
+                print(f"  \033[0;32m↳ 웹 검색 완료\033[0m")
+
+            # 도구 실행 결과를 대화 문맥에 추가
+            messages.append({
+                'role': 'tool',
+                'content': str(tool_output)
+            })
+
+    return "❌ 도구 실행 루프 한도 초과"
+
+def main():
+    client = ollama.Client()
+    system_prompt = build_system_prompt()
+    
+    # 설치된 모델 자동 탐색 및 최적 모델 Fallback
+    target_model = 'qwen3.8:27b'
+    try:
+        client.show(target_model)
+    except Exception:
+        target_model = 'qwen2.5:32b'
+        try:
+            client.show(target_model)
+        except Exception:
+            target_model = 'qwen2.5-uncensored'
+            try:
+                client.show(target_model)
+            except Exception:
+                target_model = 'qwen2.5:14b'
+                try:
+                    client.show(target_model)
+                except Exception:
+                    target_model = 'qwen2.5:7b'
+
+    # 1. 단발성 인수 실행 (예: ai "내 그래픽카드 온도 확인하고 오늘 날씨 알려줘")
+    if len(sys.argv) > 1:
+        user_prompt = " ".join(sys.argv[1:])
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt}
+        ]
+        print(f"\033[0;36m🤖 [자율형 에이전트 가동 (모델: {target_model})]\033[0m")
+        print(f"👤 사용자 요청: {user_prompt}\n")
+        answer = run_agent_turn(client, target_model, messages)
+        print(f"\n\033[0;32m🤖 [최종 답변]:\033[0m\n{answer}")
+        return
+
+    # 2. 대화형 인터랙티브 REPL 모드
+    print(f"\033[0;36m====================================================\033[0m")
+    print(f"\033[0;32m  🚀 완전 자율형 로컬 AI 에이전트 (ai) 시작  \033[0m")
+    print(f"\033[0;33m  (PC 제어, 하드웨어 점검, 웹 검색, 코딩을 스스로 수행합니다)\033[0m")
+    print(f"\033[0;36m  종료: /bye 또는 exit | 초기화: /clear\033[0m")
+    print(f"\033[0;36m====================================================\033[0m\n")
+
+    history = [{'role': 'system', 'content': system_prompt}]
+
+    while True:
+        try:
+            user_input = input("\033[1;34mAI >>> \033[0m").strip()
+            if not user_input:
+                continue
+            if user_input in ['/bye', 'exit', 'quit']:
+                print("\033[0;33m자율형 에이전트를 종료합니다.\033[0m")
+                break
+            if user_input in ['/clear', 'clear']:
+                history = [{'role': 'system', 'content': system_prompt}]
+                print("\033[0;32m대화 기억이 초기화되었습니다.\033[0m")
+                continue
+
+            history.append({'role': 'user', 'content': user_input})
+            answer = run_agent_turn(client, target_model, history)
+            print(f"\n\033[0;32m🤖 [답변]:\033[0m\n{answer}\n")
+
+        except (KeyboardInterrupt, EOFError):
+            print("\n\033[0;33m자율형 에이전트를 종료합니다.\033[0m")
+            break
+
+if __name__ == '__main__':
+    main()

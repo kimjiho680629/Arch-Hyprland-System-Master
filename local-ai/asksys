@@ -1,0 +1,153 @@
+#!/usr/bin/env -S python3 -W ignore
+import sys
+import os
+import subprocess
+import warnings
+
+# 전역 모든 경고 완벽 무음 처리
+warnings.simplefilter("ignore")
+warnings.filterwarnings("ignore")
+os.environ["PYTHONWARNINGS"] = "ignore"
+
+def dummy_showwarning(*args, **kwargs):
+    pass
+warnings.showwarning = dummy_showwarning
+
+import ollama
+
+def run_cmd(cmd):
+    """안전한 셸 명령어 실행 및 결과 수집"""
+    try:
+        res = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3
+        )
+        output = res.stdout.strip()
+        return output if output else "정보 없음"
+    except Exception as e:
+        return f"수집 실패: {e}"
+
+def collect_system_metrics():
+    """Arch Linux & RTX 5070 Ti 실시간 하드웨어/OS 상태 수집"""
+    metrics = {}
+
+    # 1. OS 및 업타임
+    metrics["uptime"] = run_cmd("uptime -p")
+    metrics["kernel"] = run_cmd("uname -r")
+
+    # 2. CPU 로드 및 온도
+    metrics["cpu_model"] = run_cmd("lscpu | grep 'Model name' | sed 's/Model name:[ \t]*//'")
+    metrics["cpu_temp"] = run_cmd("sensors 2>/dev/null | grep -E '(Tctl|Package id 0|Tccd1):' | head -n 2")
+    if not metrics["cpu_temp"] or metrics["cpu_temp"] == "정보 없음":
+        metrics["cpu_temp"] = run_cmd("cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | head -n 1 | awk '{print $1/1000 \"°C\"}'")
+
+    # 3. GPU (NVIDIA RTX 5070 Ti) 실시간 수치
+    gpu_raw = run_cmd("nvidia-smi --query-gpu=name,temperature.gpu,utilization.gpu,utilization.memory,memory.used,memory.total,power.draw --format=csv,noheader,nounits 2>/dev/null")
+    if gpu_raw and "수집 실패" not in gpu_raw:
+        parts = [p.strip() for p in gpu_raw.split(",")]
+        if len(parts) >= 7:
+            metrics["gpu_info"] = (
+                f"모델: {parts[0]}\n"
+                f"온도: {parts[1]}°C | GPU 사용률: {parts[2]}% | 메모리 I/O: {parts[3]}%\n"
+                f"VRAM 점유율: {parts[4]}MB / {parts[5]}MB (사용률: {round(float(parts[4])/float(parts[5])*100, 1)}%)\n"
+                f"소비 전력: {parts[6]}W"
+            )
+        else:
+            metrics["gpu_info"] = gpu_raw
+    else:
+        metrics["gpu_info"] = run_cmd("nvidia-smi 2>/dev/null | head -n 15")
+
+    # 4. RAM & Swap 메모리
+    metrics["memory"] = run_cmd("free -h | awk 'NR<=3 {print $1, $2, $3, $4, $7}'")
+
+    # 5. 디스크 용량 (Root & Home)
+    metrics["disk"] = run_cmd("df -h / /home 2>/dev/null | awk '{print $1, $2, $3, $4, $5, $6}'")
+
+    # 6. 실패한 systemd 서비스
+    failed_services = run_cmd("systemctl --failed --no-legend --no-pager 2>/dev/null")
+    metrics["failed_services"] = failed_services if failed_services else "실패한 서비스 없음 (정상)"
+
+    # 7. 최근 커널 시스템 경고/에러 로그
+    dmesg_errors = run_cmd("journalctl -p 3 -xb -n 4 --no-pager 2>/dev/null | awk '{$1=$2=$3=\"\"; print $0}'")
+    metrics["recent_errors"] = dmesg_errors if dmesg_errors else "최근 치명적 커널 에러 없음 (정상)"
+
+    return metrics
+
+def main():
+    user_query = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "현재 시스템 전체 상태를 종합 진단하고 이상 유무와 개선점을 분석해줘."
+
+    print("\033[0;34m🔍 [Arch Linux & RTX 5070 Ti 실시간 하드웨어/OS 점검 중...]\033[0m")
+    metrics = collect_system_metrics()
+
+    raw_data = f"""[호스트 환경]
+- OS / Kernel: Arch Linux ({metrics['kernel']}) | 업타임: {metrics['uptime']}
+- CPU: {metrics['cpu_model']}
+- CPU 실시간 온도: {metrics['cpu_temp']}
+
+[GPU (NVIDIA) 실시간 상태]
+{metrics['gpu_info']}
+
+[메모리 (RAM & Swap)]
+{metrics['memory']}
+
+[디스크 용량]
+{metrics['disk']}
+
+[systemd 서비스 상태]
+{metrics['failed_services']}
+
+[최근 주요 시스템 로그]
+{metrics['recent_errors']}"""
+
+    print("\033[0;32m✓ 하드웨어 센서 및 시스템 메트릭 수집 완료\033[0m\n")
+    print(f"\033[0;36m📋 [실시간 수집된 주요 수치 요약]\033[0m\n{metrics['gpu_info']}\n")
+
+    system_prompt = (
+        "당신은 Arch Linux 및 초고사양 하드웨어(Ryzen 9800X3D + RTX 5070 Ti) 전문 시스템 엔지니어 AI입니다. "
+        "제공된 실시간 시스템 메트릭 데이터를 기반으로 사용자의 PC 상태를 정밀하게 진단하세요.\n"
+        "1. 종합 판정: [정상 🟢 / 주의 🟡 / 위험 🔴] 3단계로 명확히 판정하세요.\n"
+        "2. CPU/GPU 온도, VRAM/RAM 점유율, 전력 소비, systemd 데몬 상태를 항목별로 평가하세요.\n"
+        "3. 만약 이상 징후(과열, VRAM 누수, 실패한 서비스)가 발견되면 즉시 실행할 수 있는 리눅스 조치 명령어를 제시하세요.\n"
+        "4. 답변은 품격 있고 명확한 한국어로 작성하세요."
+    )
+
+    user_prompt = f"""다음은 방금 내 컴퓨터에서 실시간으로 수집된 실제 하드웨어 및 OS 상태 데이터입니다:
+
+{raw_data}
+
+[사용자 진단 요청]
+{user_query}"""
+
+    try:
+        client = ollama.Client()
+        target_model = 'qwen3.8:27b'
+        try:
+            client.show(target_model)
+        except Exception:
+            target_model = 'qwen2.5-32b-uncensored'
+            try:
+                client.show(target_model)
+            except Exception:
+                target_model = 'qwen2.5-uncensored'
+
+        response = client.chat(
+            model=target_model,
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt}
+            ],
+            options={'temperature': 0.4},
+            keep_alive=0
+        )
+        print("\033[0;32m🤖 [로컬 AI 실시간 시스템 종합 진단 리포트]:\033[0m\n")
+        print(response['message']['content'])
+    except Exception as e:
+        print(f"\033[0;31m❌ Ollama 진단 실행 오류: {e}\033[0m")
+        print("💡 팁: 'sudo systemctl restart ollama.service' 로 Ollama 서비스가 켜져 있는지 확인하세요.")
+
+if __name__ == '__main__':
+    main()

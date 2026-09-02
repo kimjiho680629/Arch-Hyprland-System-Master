@@ -1,0 +1,20 @@
+# Large GGUF & Model weights
+*.gguf
+*.bin
+*.pt
+*.safetensors
+*.tar.gz
+
+# Python & Caches
+__pycache__/
+*.pyc
+*.pyo
+.cache/
+.tmp/
+/tmp/
+
+# OS / Editor Files
+.DS_Store
+*.swp
+*.bak
+*~
