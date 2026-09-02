@@ -284,13 +284,32 @@
             "warning": 30,
             "critical": 15
         },
-        "format": "{icon} {capacity}%",
-        "format-charging": " {capacity}%",
-        "format-plugged": " {capacity}%",
-        "format-alt": "{icon} {time}",
+        "format": "{icon}   {capacity}%",
+        "format-charging": "  {capacity}%",
+        "format-plugged": "  {capacity}%",
+        "format-alt": "{icon}  {time}",
         // "format-good": "", // An empty format will hide the module
         // "format-full": "",
         "format-icons": [" ", " ", " ", " ", " "]
+    },
+
+    // Language / Input Method Flag
+    "hyprland/language": {
+        "format": "{}",
+        "format-en": "🇺🇸",
+        "format-us": "🇺🇸",
+        "format-ko": "🇰🇷",
+        "format-kr": "🇰🇷",
+        "format-한": "🇰🇷",
+        "format-자": "🇺🇸",
+        "format-Korean": "🇰🇷",
+        "format-English (US)": "🇺🇸",
+        "format-English": "🇺🇸",
+        "format-Hangul": "🇰🇷",
+        "keyboard-name": "at-translated-set-2-keyboard",
+        "on-click": "hyprctl switchxkblayout all next",
+        "on-scroll-up": "true",
+        "on-scroll-down": "true"
     },
 
     // Pulseaudio
