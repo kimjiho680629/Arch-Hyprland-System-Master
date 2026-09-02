@@ -1,6 +1,7 @@
 {
     // General Settings
     "layer": "top",
+    "output": "DP-2",
     "margin-top": 0,
     "margin-bottom": 0,
     "margin-left": 0,
@@ -14,8 +15,8 @@
     // Modules Left
     "modules-left": [
         "custom/appmenu",
-        //"wlr/taskbar",
-        //"group/quicklinks",
+        "wlr/taskbar",
+        "group/quicklinks",
         "hyprland/window",
         "custom/empty"
     ],
@@ -36,7 +37,6 @@
         "tray",
         "custom/notification",
         "custom/exit",
-        "custom/ml4w-welcome",
-        "clock"
+        "custom/ml4w-welcome","clock"
     ]
 }

@@ -9,3 +9,7 @@
 @define-color background @secondary;
 
 @import '../style.css';
+
+#language {
+    font-family: "Noto Color Emoji", "Noto Sans CJK KR", sans-serif;
+}

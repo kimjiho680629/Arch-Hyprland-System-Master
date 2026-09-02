@@ -4,3 +4,8 @@
 @import '../../../../../.config/waybar/colors.css';
 
 @import '../../ml4w-transparent/style.css';
+
+
+#language {
+    font-family: "Noto Color Emoji", "Noto Sans CJK KR", sans-serif;
+}

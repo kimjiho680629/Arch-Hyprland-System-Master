@@ -22,3 +22,8 @@
 #custom-chatgpt {
     background-image: url("../../../assets/openai-black.svg");
 }
+
+
+#language {
+    font-family: "Noto Color Emoji", "Noto Sans CJK KR", sans-serif;
+}

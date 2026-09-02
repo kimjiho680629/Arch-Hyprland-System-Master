@@ -1,7 +1,7 @@
 * {
     /* `otf-font-awesome` is required to be installed for icons */
 	/* `Material-Icons` is required for notification cneter */
-    font-family: "Fira Sans Semibold", "Font Awesome 7 Free", "Font Awesome 7 Brands", "Font Awesome 6 Free", "Font Awesome 6 Brands", FontAwesome, Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Noto Sans CJK KR", "Fira Sans Semibold", "Font Awesome 7 Free", "Font Awesome 7 Brands", "Font Awesome 6 Free", "Font Awesome 6 Brands", FontAwesome, Roboto, Helvetica, Arial, sans-serif;
     font-size: 13px;
 }
 
@@ -258,6 +258,7 @@ label:focus {
 }
 
 #language {
+    font-family: "Noto Color Emoji", "Noto Sans CJK KR", sans-serif;
     background: #00b093;
     color: #740864;
     padding: 0 5px;

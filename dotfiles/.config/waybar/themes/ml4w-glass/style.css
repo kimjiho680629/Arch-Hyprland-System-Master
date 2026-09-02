@@ -11,7 +11,7 @@
  * ----------------------------------------------------- */
 
  * {
-    font-family: "Fira Sans Semibold", "Font Awesome 7 Free", "Font Awesome 7 Brands", "Font Awesome 6 Free", "Font Awesome 6 Brands", FontAwesome, "Material Icons", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "FiraCode Nerd Font Light", "Noto Sans CJK KR", "KoPubWorldDotum_Pro", "Noto Color Emoji", "Font Awesome 7 Free", "Font Awesome 7 Brands", "Font Awesome 6 Free", "Font Awesome 6 Brands", FontAwesome, "Material Icons", Roboto, Helvetica, Arial, sans-serif;
     border: none;
     border-radius: 0px;
 }
@@ -251,11 +251,17 @@ window#waybar.empty #window {
  * ----------------------------------------------------- */
 
 #disk,#memory,#cpu,#language {
+    font-family: "Noto Color Emoji", "Noto Sans CJK KR", sans-serif;
     margin:0px;
     padding:0px;
 }
 
 #language {
+    font-family: "Noto Color Emoji", "Noto Sans CJK KR", sans-serif;
+    font-size: 16px;
+    min-width: 24px;
+    margin-left: 4px;
+    margin-right: 4px;
 }
 
 /* -----------------------------------------------------

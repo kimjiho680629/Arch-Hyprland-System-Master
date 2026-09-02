@@ -15,14 +15,13 @@
     "modules-left": [
         "custom/appmenu",
         "hyprland/workspaces",
-        //"wlr/taskbar",
-        //"group/quicklinks",
+        "wlr/taskbar",
+        "group/quicklinks",
         //"custom/nowplaying",        
         "custom/empty"
     ],
     // Modules Center
-    "modules-center": [
-        "clock",
+    "modules-center": ["clock",
         "custom/empty"
     ],
     // Modules Right    

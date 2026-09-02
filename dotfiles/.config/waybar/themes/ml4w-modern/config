@@ -15,8 +15,8 @@
     "modules-left": [
         "custom/appmenu",
         "hyprland/workspaces",
-        //"wlr/taskbar",
-        //"group/quicklinks",
+        "wlr/taskbar",
+        "group/quicklinks",
         //"custom/nowplaying",        
         "custom/empty"
     ],
@@ -38,7 +38,6 @@
         "tray",
         "custom/notification",
         "custom/exit",
-        "custom/ml4w-welcome",
-        "clock"
+        "custom/ml4w-welcome","clock"
     ]
 }

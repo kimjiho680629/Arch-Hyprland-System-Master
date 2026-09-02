@@ -7,7 +7,7 @@
     // Choose the order of the modules
     "modules-left": ["hyprland/workspaces","custom/waybarthemes"],
     "modules-center": ["hyprland/window"],
-    "modules-right": ["custom/ml4w-welcome","mpd", "idle_inhibitor", "pulseaudio", "network", "cpu", "memory", "temperature", "backlight", "keyboard-state", "sway/language", "battery", "battery#bat2", "clock", "tray"],
+    "modules-right": ["custom/ml4w-welcome","mpd", "idle_inhibitor", "pulseaudio", "network", "cpu", "memory", "temperature", "backlight", "keyboard-state", "sway/language", "battery", "battery#bat2","clock", "tray"],
     // Modules configuration
     "keyboard-state": {
         "numlock": true,
@@ -20,10 +20,10 @@
     },
     // ML4W Welcome App
     "custom/ml4w-welcome": {
-        "on-click": "sleep 0.1 && ~/.config/ml4w/settings/ml4w-sidebar.sh",
-        "on-click-right": "sleep 0.1 && com.ml4w.welcome",
+        "on-click": "qs ipc call sidebar toggle",
+        "on-click-right": "qs ipc call welcome toggle",
         "format": " ",
-        "tooltip": false
+        "tooltip-format": "Left: Open ML4W Sidebar\nRight: Open ML4W Welcome App"
     },    
     // Waybar Themes
     "custom/waybarthemes": {
@@ -76,8 +76,7 @@
     },
     "tray": {
         "spacing": 10
-    },
-    "clock": {
+    },"clock": {
         // "timezone": "America/New_York",
         "tooltip-format": "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>",
         "format-alt": "{:%Y-%m-%d}"
